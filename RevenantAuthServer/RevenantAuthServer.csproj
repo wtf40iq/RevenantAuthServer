@@ -1,10 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
     <PropertyGroup>
         <TargetFramework>net8.0</TargetFramework>
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <InvariantGlobalization>true</InvariantGlobalization>
-        <!-- Контейнер Render free = 512 МБ: Server GC резервирует слишком много памяти
-             и приводит к молчаливому OOM-убийству. Используем Workstation GC. -->
+        <!-- Render free = 512 МБ: отключаем Server GC, иначе молчаливый OOM -->
         <ServerGarbageCollection>false</ServerGarbageCollection>
         <AssemblyName>RevenantAuthServer</AssemblyName>
         <Product>Revenant Auth Server</Product>
@@ -12,3 +13,10 @@
         <Company>lotesnowhallen</Company>
         <Copyright>© 2026 lotesnowhallen</Copyright>
     </PropertyGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="8.0.11" />
+        <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.11" />
+    </ItemGroup>
+
+</Project>
