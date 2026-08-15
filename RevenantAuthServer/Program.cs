@@ -5,6 +5,7 @@ using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Npgsql;
 using RevenantAuthServer.Data;
 using RevenantAuthServer.Models;
 using RevenantAuthServer.Services;
@@ -30,10 +31,13 @@ if (string.IsNullOrWhiteSpace(jwtSecret) || Encoding.UTF8.GetByteCount(jwtSecret
 const string jwtIssuer = "revenant-auth-server";
 const string jwtAudience = "revenant-launcher";
 
-var connectionString = builder.Configuration.GetConnectionString("Default")
-    ?? "Data Source=data/revenant.db";
+var connectionString = Environment.GetEnvironmentVariable("DATABASE_URL")
+    ?? builder.Configuration.GetConnectionString("Default");
 
-builder.Services.AddDbContext<AuthDbContext>(options => options.UseSqlite(connectionString));
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("DATABASE_URL не задан. Укажи env-переменную со строкой подключения Neon/Postgres.");
+
+builder.Services.AddDbContext<AuthDbContext>(options => options.UseNpgsql(NormalizeConnectionString(connectionString)));
 builder.Services.AddSingleton(new TokenService(jwtSecret, jwtIssuer, jwtAudience));
 
 builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
@@ -79,7 +83,6 @@ builder.Services.AddAuthorization();
 var app = builder.Build();
 
 // ===== База данных =====
-Directory.CreateDirectory("data");
 using (var scope = app.Services.CreateScope())
 {
     scope.ServiceProvider.GetRequiredService<AuthDbContext>().Database.EnsureCreated();
@@ -244,6 +247,30 @@ app.Run($"http://0.0.0.0:{port}");
 // 401 с телом { message } — Results.Unauthorized не принимает объект
 static IResult UnauthorizedJson(string message)
     => Results.Json(new { message }, statusCode: StatusCodes.Status401Unauthorized);
+
+// Neon отдаёт строку в URI-формате (postgresql://user:pass@host/db),
+// а Npgsql принимает только key=value — приводим к нужному виду
+static string NormalizeConnectionString(string url)
+{
+    if (!url.StartsWith("postgres://", StringComparison.OrdinalIgnoreCase) &&
+        !url.StartsWith("postgresql://", StringComparison.OrdinalIgnoreCase))
+        return url;
+
+    var uri = new Uri(url);
+    var parts = uri.UserInfo.Split(':', 2);
+
+    var builder = new NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Database = uri.AbsolutePath.TrimStart('/'),
+        Username = Uri.UnescapeDataString(parts[0]),
+        Password = parts.Length > 1 ? Uri.UnescapeDataString(parts[1]) : "",
+        SslMode = SslMode.Require
+    };
+    if (uri.Port > 0) builder.Port = uri.Port;
+
+    return builder.ConnectionString;
+}
 
 // ===== Валидация (те же правила, что в лаунчере) =====
 static string? ValidateCredentials(string? username, string? password)
